@@ -1,9 +1,13 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, MessageSquare, Mic, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import logo from "@/assets/quantumbot-logo.png";
+import logo from "@/assets/logo.png"; // ✅
+ // if Index.tsx is in src/pages
+ // updated logo
+
+const BASE_URL = "http://127.0.0.1:5000";
 
 interface Message {
   role: "user" | "assistant";
@@ -18,9 +22,12 @@ const Index = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const handleUpload = async () => {
-    fileInputRef.current?.click();
-  };
+  // Auto-scroll when messages update
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleUpload = async () => fileInputRef.current?.click();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -30,29 +37,14 @@ const Index = () => {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/upload", {
-        method: "POST",
-        body: formData,
-      });
-
+      const response = await fetch(`${BASE_URL}/upload`, { method: "POST", body: formData });
       if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Document uploaded successfully",
-        });
+        toast({ title: "Success", description: "Document uploaded successfully" });
       } else {
-        toast({
-          title: "Error",
-          description: "Failed to upload document",
-          variant: "destructive",
-        });
+        toast({ title: "Error", description: "Failed to upload document", variant: "destructive" });
       }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to connect to backend",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: "Error", description: "Failed to connect to backend", variant: "destructive" });
     }
   };
 
@@ -67,48 +59,57 @@ const Index = () => {
     try {
       const formData = new FormData();
       formData.append("message", inputValue);
-      formData.append("target_lang", "english");
 
-      const response = await fetch("http://127.0.0.1:8000/chat", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(`${BASE_URL}/chat/stream`, { method: "POST", body: formData });
+      if (!response.body) throw new Error("No response body");
 
-      if (response.ok) {
-        const data = await response.json();
-        const assistantMessage: Message = {
-          role: "assistant",
-          content: data.response || data.message || "No response",
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to get response",
-          variant: "destructive",
-        });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+
+      let assistantMessage: Message = { role: "assistant", content: "" };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const json = JSON.parse(line);
+            const chunk = json.message?.content;
+            if (chunk) {
+              assistantMessage.content += chunk;
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { ...assistantMessage };
+                return newMessages;
+              });
+            }
+          } catch {
+            // ignore incomplete JSON lines
+          }
+        }
       }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to connect to backend",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: "Error", description: "Failed to connect to backend", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleVoice = () => {
-    toast({
-      title: "Voice",
-      description: "Voice input functionality coming soon",
-    });
+    toast({ title: "Voice Feature", description: "Voice input functionality coming soon" });
   };
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      {/* Header with Logo */}
+      {/* Header */}
       <header className="fixed left-0 right-0 top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="container flex h-16 items-center px-4">
           <img src={logo} alt="QuantumBot" className="h-10 w-10" />
@@ -125,26 +126,64 @@ const Index = () => {
         accept=".txt,.pdf,.doc,.docx"
       />
 
-      {/* Main Content */}
+      {/* Chat Area */}
       <div className="flex flex-1 flex-col pt-16">
-        {/* Messages Area */}
         <div className="flex-1 overflow-y-auto px-4 py-8">
           <div className="mx-auto max-w-3xl space-y-6">
             {messages.length === 0 ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <h1 className="mb-2 text-4xl font-bold text-foreground">
-                    Ready when you are.
-                  </h1>
+              <div className="flex h-[70vh] flex-col items-center justify-center gap-6">
+                {/* Welcome Message Only */}
+                <h1 className="text-3xl font-bold text-foreground text-center">
+                  Hey! QuantumBot welcomes you
+                </h1>
+
+                {/* Ask Anything Input */}
+                <div className="w-full max-w-md">
+                  <div className="relative flex items-center gap-2 rounded-full border border-input bg-card p-2 shadow-sm">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-full"
+                      onClick={handleUpload}
+                    >
+                      <Upload className="h-5 w-5" />
+                    </Button>
+
+                    <Input
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleChat()}
+                      placeholder="Ask anything"
+                      className="border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                      disabled={isLoading}
+                    />
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-full"
+                      onClick={handleChat}
+                      disabled={isLoading}
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-full"
+                      onClick={handleVoice}
+                    >
+                      <Mic className="h-5 w-5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : (
               messages.map((message, index) => (
                 <div
                   key={index}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
+                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
                     className={`max-w-[80%] rounded-2xl px-4 py-3 ${
@@ -158,6 +197,7 @@ const Index = () => {
                 </div>
               ))
             )}
+
             {isLoading && (
               <div className="flex justify-start">
                 <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-3">
@@ -165,53 +205,56 @@ const Index = () => {
                 </div>
               </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {/* Input Area */}
-        <div className="border-t border-border bg-background px-4 py-4">
-          <div className="mx-auto max-w-3xl">
-            <div className="relative flex items-center gap-2 rounded-full border border-input bg-card p-2 shadow-sm">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 shrink-0 rounded-full"
-                onClick={handleUpload}
-              >
-                <Upload className="h-5 w-5" />
-              </Button>
+        {/* Input Area (fixed at bottom for ongoing chat) */}
+        {messages.length > 0 && (
+          <div className="border-t border-border bg-background px-4 py-4">
+            <div className="mx-auto max-w-3xl">
+              <div className="relative flex items-center gap-2 rounded-full border border-input bg-card p-2 shadow-sm">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full"
+                  onClick={handleUpload}
+                >
+                  <Upload className="h-5 w-5" />
+                </Button>
 
-              <Input
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleChat()}
-                placeholder="Ask anything"
-                className="border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
-                disabled={isLoading}
-              />
+                <Input
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleChat()}
+                  placeholder="Ask anything"
+                  className="border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                  disabled={isLoading}
+                />
 
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 shrink-0 rounded-full"
-                onClick={handleChat}
-                disabled={isLoading}
-              >
-                <MessageSquare className="h-5 w-5" />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full"
+                  onClick={handleChat}
+                  disabled={isLoading}
+                >
+                  <MessageSquare className="h-5 w-5" />
+                </Button>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 shrink-0 rounded-full"
-                onClick={handleVoice}
-              >
-                <Mic className="h-5 w-5" />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full"
+                  onClick={handleVoice}
+                >
+                  <Mic className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
