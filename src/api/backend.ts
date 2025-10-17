@@ -1,27 +1,26 @@
-// src/api/backend.ts
-const BASE_URL = "http://127.0.0.1:5000";
+export const BASE_URL = "http://127.0.0.1:8000"; // Replace with your FastAPI port
 
-export async function sendMessage(message: string, target_lang: string) {
-  const response = await fetch(`${BASE_URL}/api/chat`, {
+export async function sendMessage(message: string) {
+  const formData = new FormData();
+  formData.append("message", message);
+
+  const response = await fetch(`${BASE_URL}/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, target_lang }),
+    body: formData,
   });
-  return response.json();
+
+  if (!response.ok) throw new Error("Failed to connect backend");
+
+  const text = await response.text();
+  return { answer: text };
 }
 
-export async function uploadDocument(filename: string, content: string) {
-  const response = await fetch(`${BASE_URL}/api/upload_doc`, {
+export async function uploadDocument(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${BASE_URL}/upload`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename, content }),
-  });
-  return response.json();
-}
-
-export async function resetContext() {
-  const response = await fetch(`${BASE_URL}/api/reset_context`, {
-    method: "POST",
+    body: formData,
   });
   return response.json();
 }

@@ -1,26 +1,39 @@
 import { useState } from "react";
-import { sendMessage, uploadDocument, resetContext } from "../../api/backend";
-import { Input } from "./input"; // Update the import path since input.tsx is in the same directory
-// ...existing code...
+import { sendMessage, uploadDocument } from "../../api/backend"; // ✅ removed resetContext (not used in backend)
+import { Input } from "./input"; // ✅ path corrected
+
 export default function Chat() {
   const [inputMessage, setInputMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<{ sender: string; text: string }[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState("english");
 
   const handleSend = async () => {
-    if (!inputMessage) return;
+    if (!inputMessage.trim()) return;
 
-    // Update user message first
-    setChatHistory([...chatHistory, { sender: "user", text: inputMessage }]);
+    // Add user message
+    setChatHistory((prev) => [...prev, { sender: "user", text: inputMessage }]);
 
-    const data = await sendMessage(inputMessage, selectedLanguage);
+    try {
+      // Send to backend
+      const data = await sendMessage(inputMessage);
 
-    setChatHistory(prev => [...prev, { sender: "bot", text: data.message?.content || "" }]);
+      // Add bot response
+      setChatHistory((prev) => [
+        ...prev,
+        { sender: "bot", text: data.answer || "No response from backend" },
+      ]);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setChatHistory((prev) => [
+        ...prev,
+        { sender: "bot", text: "⚠️ Failed to connect to backend." },
+      ]);
+    }
+
     setInputMessage("");
   };
 
-  const handleReset = async () => {
-    await resetContext();
+  const handleReset = () => {
     setChatHistory([]);
   };
 
@@ -37,14 +50,29 @@ export default function Chat() {
     >
       {/* Language selector and reset */}
       <div style={{ marginBottom: 10 }}>
-        <select value={selectedLanguage} onChange={(e) => setSelectedLanguage(e.target.value)}>
+        <select
+          value={selectedLanguage}
+          onChange={(e) => setSelectedLanguage(e.target.value)}
+          style={{ padding: 5 }}
+        >
           <option value="english">English</option>
           <option value="hindi">Hindi</option>
           <option value="spanish">Spanish</option>
           <option value="french">French</option>
         </select>
-        <button onClick={handleReset} style={{ marginLeft: 10 }}>
-          Reset Context
+        <button
+          onClick={handleReset}
+          style={{
+            marginLeft: 10,
+            padding: "5px 10px",
+            background: "#444",
+            color: "white",
+            borderRadius: 5,
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Reset Chat
         </button>
       </div>
 
@@ -78,7 +106,16 @@ export default function Chat() {
 
       <button
         onClick={handleSend}
-        style={{ width: "100%", marginTop: 5, padding: 8, borderRadius: 5, background: "#6a11cb", color: "white" }}
+        style={{
+          width: "100%",
+          marginTop: 5,
+          padding: 8,
+          borderRadius: 5,
+          background: "#6a11cb",
+          color: "white",
+          border: "none",
+          cursor: "pointer",
+        }}
       >
         Send
       </button>
